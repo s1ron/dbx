@@ -4568,6 +4568,7 @@ export default {
     batchMysqlAutoIncrement: "Set AUTO_INCREMENT ({count})",
     batchDropIndexes: "Drop Indexes ({count})",
     executeProcedure: "Execute Procedure",
+    runFunctionScript: "Run Script",
     compileObject: "Compile",
     compileObjectSuccess: '"{name}" compiled successfully',
     compileObjectFailedTitle: "View compilation failed",

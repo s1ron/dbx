@@ -248,6 +248,8 @@ import { passwordViewerEnabled } from "@/lib/security/passwordViewer";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import { buildConnectionUrlCopy, CONNECTION_URL_COPY_WITH_PASSWORD_FORMATS, connectionUrlCopyFormats, type ConnectionUrlCopyFormat } from "@/lib/connection/connectionUrlBuilder";
 import { rankSavedSqlHistory, type SavedSqlHistoryScope } from "@/lib/savedSql/savedSqlHistory";
+import { buildFunctionRunScriptSqlFromValues } from "@/lib/table/routineExecutionSql";
+import { loadRoutineParameters } from "@/lib/table/routineParameters";
 import { savedSqlClipboardFileIds, savedSqlPasteTargetForNode } from "@/lib/savedSql/savedSqlClipboard";
 import { exportSavedSqlFileContent } from "@/lib/savedSql/savedSqlExport";
 import { isSqlServerLinkedNode } from "@/lib/database/sqlServerLinkedServers";
@@ -2972,6 +2974,44 @@ function openProcedureExecution() {
   const node = activeNode.value;
   if (node.type !== "procedure" || !node.connectionId || !node.database) return;
   emit("open-procedure", node);
+}
+
+async function openFunctionRunScript() {
+  const node = activeNode.value;
+  if (node.type !== "function" || !node.connectionId || !node.database) return;
+  const databaseType = databaseTypeForNode(node);
+  if (databaseType !== "postgres") return;
+
+  const routineName = node.objectName || node.label;
+  let parameters: Awaited<ReturnType<typeof loadRoutineParameters>> = [];
+
+  try {
+    await connectionStore.ensureConnected(node.connectionId);
+    parameters = await loadRoutineParameters({
+      connectionId: node.connectionId,
+      database: node.database,
+      databaseType,
+      schema: node.schema,
+      routineName,
+      routineKind: "function",
+    });
+  } catch {
+    // If parameter load fails, still open a tab with no-arg template
+  }
+
+  const sql = buildFunctionRunScriptSqlFromValues({
+    databaseType,
+    schema: node.schema,
+    routineName,
+    parameters: parameters.map((p) => ({
+      ...p,
+      value: "",
+      useNull: true,
+    })),
+  });
+
+  const tabId = queryStore.createTab(node.connectionId, node.database, `Run - ${routineName}`, "query", node.schema, undefined, node.catalog, { forceNew: true });
+  queryStore.updateSql(tabId, sql);
 }
 
 async function openDatabaseObjectDependencies() {
@@ -7492,6 +7532,9 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     const isPackageMember = node.parentType === "package" && !!node.parentName;
     if (node.type === "procedure" && !isPackageMember) {
       items.push({ label: t("contextMenu.executeProcedure"), action: openProcedureExecution, icon: Play });
+    }
+    if (node.type === "function" && !isPackageMember && databaseTypeForNode(node) === "postgres") {
+      items.push({ label: t("contextMenu.runFunctionScript"), action: openFunctionRunScript, icon: Play });
     }
     if (!isPackageMember && currentDatabaseType() === "xugu" && buildXuguCompileSql({ objectType: node.type, schema: node.schema, name: node.objectName || node.label })) {
       items.push({ label: t("contextMenu.compileObject"), action: compileXuguObject, icon: Wrench });

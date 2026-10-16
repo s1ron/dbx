@@ -39,6 +39,84 @@ export function buildProcedureExecutionSql(options: BuildRoutineExecutionSqlOpti
   return buildProcedureExecutionSqlFromValues({ ...options, parameters: [] });
 }
 
+/**
+ * Build a SELECT * FROM <function>(...) script for PostgreSQL functions.
+ * Each IN parameter is rendered as: param_name := <default_value>::data_type
+ */
+export function buildFunctionRunScriptSql(options: BuildRoutineExecutionSqlOptions): string {
+  return buildFunctionRunScriptSqlFromValues({ ...options, parameters: [] });
+}
+
+/**
+ * Return a sensible default literal for common PostgreSQL data types.
+ * The returned string is ready to embed directly in SQL (already quoted where needed).
+ */
+function defaultValueForPostgresType(dataType: string): string {
+  const t = dataType
+    .trim()
+    .toLowerCase()
+    .replace(/\(.*\)$/, "")
+    .trim();
+
+  // Integer / numeric types
+  if (/^(smallint|int2|integer|int4|int|bigint|int8|serial|bigserial|smallserial)$/.test(t)) return "0";
+  if (/^(numeric|decimal|real|float4|double precision|float8|money)$/.test(t)) return "0";
+
+  // Boolean
+  if (t === "boolean" || t === "bool") return "false";
+
+  // Text / char types → empty string literal
+  if (/^(text|varchar|character varying|char|character|name|citext|bpchar)$/.test(t)) return "''";
+
+  // JSON / JSONB
+  if (t === "json" || t === "jsonb") return "'{}'";
+
+  // Arrays (type ends with [])
+  if (dataType.trim().endsWith("[]")) return "'{}'";
+
+  // UUID
+  if (t === "uuid") return "'00000000-0000-0000-0000-000000000000'";
+
+  // Date / time
+  if (t === "date") return "'2000-01-01'";
+  if (t === "time" || t === "time without time zone" || t === "time with time zone" || t === "timetz") return "'00:00:00'";
+  if (/^(timestamp|timestamptz|timestamp without time zone|timestamp with time zone)$/.test(t)) return "'2000-01-01 00:00:00'";
+  if (t === "interval") return "'0'";
+
+  // Byte / binary
+  if (t === "bytea") return "''";
+
+  // Geometric / network / other → NULL fallback
+  return "NULL";
+}
+
+export function buildFunctionRunScriptSqlFromValues(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[] }): string {
+  const routine = qualifiedRoutineName(options);
+  const sortedParameters = [...options.parameters].filter((p) => p.mode === "IN" || p.mode === "INOUT" || p.mode === "UNKNOWN").sort((a, b) => a.ordinal - b.ordinal);
+
+  if (sortedParameters.length === 0) {
+    return `SELECT * FROM ${routine}();`;
+  }
+
+  const args = sortedParameters.map((param, index) => {
+    const paramName = param.name || `param_${param.ordinal}`;
+    const dataType = param.dataType || "text";
+    const suffix = index < sortedParameters.length - 1 ? "," : "";
+
+    // Prefer an explicit value if set, otherwise use type-aware default
+    let argValue: string;
+    if (param.value && param.value.trim() !== "") {
+      argValue = param.value.trim();
+    } else {
+      argValue = defaultValueForPostgresType(dataType);
+    }
+
+    return `  ${paramName} := ${argValue}::${dataType}${suffix}`;
+  });
+
+  return `SELECT * FROM ${routine}(\n${args.join("\n")}\n);`;
+}
+
 export function buildProcedureExecutionSqlFromValues(options: BuildRoutineExecutionSqlOptions & { parameters: RoutineParameterValue[] }): string {
   const routine = qualifiedRoutineName(options);
   const sortedParameters = [...options.parameters].sort((a, b) => a.ordinal - b.ordinal);

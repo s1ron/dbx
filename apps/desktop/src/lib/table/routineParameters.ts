@@ -8,6 +8,8 @@ export interface LoadRoutineParametersOptions {
   databaseType?: DatabaseType;
   schema?: string;
   routineName: string;
+  /** For PostgreSQL: 'function' queries prokind='f', 'procedure' queries prokind='p' (default) */
+  routineKind?: "function" | "procedure";
 }
 
 export async function loadRoutineParameters(options: LoadRoutineParametersOptions): Promise<RoutineParameter[]> {
@@ -39,7 +41,7 @@ export function supportsRoutineParameterMetadata(databaseType?: DatabaseType): b
   );
 }
 
-export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName">): string | null {
+export function routineParametersQuery(options: Pick<LoadRoutineParametersOptions, "database" | "databaseType" | "schema" | "routineName" | "routineKind">): string | null {
   if (!supportsRoutineParameterMetadata(options.databaseType)) return null;
   const effectiveSchema = options.schema || (options.databaseType === "postgres" ? "public" : "") || (options.databaseType === "mysql" || options.databaseType === "doris" || options.databaseType === "starrocks" ? options.database : "");
   const schema = quoteSqlLiteral(effectiveSchema);
@@ -76,7 +78,7 @@ CROSS JOIN LATERAL (
     COUNT(*) FILTER (WHERE COALESCE(p.proargmodes[gs.ordinal], 'i') IN ('i', 'b', 'v')) OVER (ORDER BY gs.ordinal) AS input_ordinal
   FROM generate_series(1, COALESCE(array_length(p.proallargtypes, 1), p.pronargs)) AS gs(ordinal)
 ) arg
-WHERE p.prokind = 'p'
+WHERE p.prokind = '${options.routineKind === "function" ? "f" : "p"}'
   AND n.nspname = ${schema}
   AND p.proname = ${name}
 ORDER BY arg.ordinal;`.trim();

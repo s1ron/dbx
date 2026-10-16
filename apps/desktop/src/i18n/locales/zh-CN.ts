@@ -4500,6 +4500,7 @@ export default withEnglishFallback({
     batchMysqlAutoIncrement: "设置自增起始值（{count}）",
     batchDropIndexes: "删除索引（{count}）",
     executeProcedure: "执行过程",
+    runFunctionScript: "运行脚本",
     compileObject: "编译",
     compileObjectSuccess: '"{name}" 编译成功',
     compileObjectFailedTitle: "视图编译失败",
